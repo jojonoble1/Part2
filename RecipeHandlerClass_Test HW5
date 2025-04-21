@@ -1,0 +1,83 @@
+@IsTest
+private class RecipeHandlerClass_Test {
+    @IsTest
+    static void testValidateRecipes() {
+        Recipe__c validRecipe = new Recipe__c(
+            Name = 'Chocolate Cake',
+            Active_Time__c = 30,
+            Description__c = 'Delicious cake',
+            Active_Time_Units__c = 'Minutes',
+            Servings__c = 8
+        );
+
+        Recipe__c invalidRecipe = new Recipe__c(
+            Name = null,
+            Active_Time__c = null,
+            Description__c = '',
+            Active_Time_Units__c = '',
+            Servings__c = null
+        );
+
+        List<Recipe__c> recipes = new List<Recipe__c>{ validRecipe, invalidRecipe };
+
+        RecipeHandlerClass.validateRecipes(recipes);
+
+        System.assertEquals(false, validRecipe.Draft__c, 'Valid recipe should not be draft');
+        System.assertEquals(true, invalidRecipe.Draft__c, 'Invalid recipe should be draft');
+    }
+
+    @IsTest
+    static void testApplyComplexityRating() {
+        Recipe__c simpleRecipe = new Recipe__c(Name = 'Easy Salad');
+        Recipe__c moderateRecipe = new Recipe__c(Name = 'Medium Pasta');
+        Recipe__c difficultRecipe = new Recipe__c(Name = 'Hard Lasagna');
+        Recipe__c unknownRecipe = new Recipe__c(Name = 'Mystery Dish');
+
+        List<Recipe__c> recipes = new List<Recipe__c>{ simpleRecipe, moderateRecipe, difficultRecipe, unknownRecipe };
+
+        RecipeHandlerClass.applyComplexityRating(recipes);
+
+        System.assertEquals('Simple', simpleRecipe.Complexity__c);
+        System.assertEquals('Moderate', moderateRecipe.Complexity__c);
+        System.assertEquals('Difficult', difficultRecipe.Complexity__c);
+        System.assertEquals(null, unknownRecipe.Complexity__c);
+    }
+
+    @IsTest
+    static void testCreateRecipeReviewTask() {
+        // Create Owner User
+        User u = [SELECT Id FROM User WHERE Profile.Name='Standard User' LIMIT 1];
+
+        // Create Cookbook
+        Cookbook__c cb = new Cookbook__c(Name = 'Bestseller', OwnerId = u.Id);
+        insert cb;
+
+        // Create and insert Recipe
+        Recipe__c recipe = new Recipe__c(
+            Name = 'Published Pie',
+            Active_Time__c = 15,
+            Description__c = 'Ready to review',
+            Active_Time_Units__c = 'Minutes',
+            Servings__c = 4,
+            Draft__c = false
+        );
+        insert recipe;
+
+        // Create Recipe Usage
+        Recipe_Usage__c usage = new Recipe_Usage__c(
+            Recipe__c = recipe.Id,
+            Cookbook__c = cb.Id
+        );
+        insert usage;
+
+        Test.startTest();
+        RecipeHandlerClass.createRecipeReviewTask(new List<Recipe__c>{ recipe });
+        Test.stopTest();
+
+        List<Task> tasks = [SELECT Id, Subject, WhatId, OwnerId FROM Task WHERE WhatId = :cb.Id];
+        System.assertEquals(1, tasks.size(), 'One task should be created');
+        System.assertEquals('Review Recipe', tasks[0].Subject);
+        System.assertEquals(cb.Id, tasks[0].WhatId);
+        System.assertEquals(u.Id, tasks[0].OwnerId);
+    }
+}
