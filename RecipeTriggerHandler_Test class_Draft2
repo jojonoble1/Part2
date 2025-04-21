@@ -1,0 +1,113 @@
+@IsTest
+private class RecipeHandlerClass_Test {
+    @IsTest
+    static void testValidateRecipes_PositiveAndMissingFields() {
+        // Recipe with all required fields filled
+        Recipe__c validRecipe = new Recipe__c(
+            Name = 'Valid Recipe',
+            Active_Time__c = 30,
+            Active_Time_Units__c = 'Minutes',
+            Description__c = 'Complete',
+            Servings__c = 4
+        );
+
+        // Recipe with missing fields
+        Recipe__c invalidRecipe = new Recipe__c();
+
+        List<Recipe__c> recipes = new List<Recipe__c>{ validRecipe, invalidRecipe };
+
+        RecipeHandlerClass.validateRecipes(recipes);
+
+        System.assertEquals(false, validRecipe.Draft__c, 'Expected Draft__c to be false');
+        System.assertEquals(true, invalidRecipe.Draft__c, 'Expected Draft__c to be true');
+    }
+
+    @IsTest
+    static void testApplyComplexityRating_AllLevels() {
+        // Assume HelperFunctions.rateRecipeComplexity uses Name to determine difficulty
+        Recipe__c easy = new Recipe__c(Name = 'Easy Dish');
+        Recipe__c medium = new Recipe__c(Name = 'Medium Dish');
+        Recipe__c hard = new Recipe__c(Name = 'Hard Dish');
+        Recipe__c unknown = new Recipe__c(Name = 'Mystery');
+
+        List<Recipe__c> recipes = new List<Recipe__c>{ easy, medium, hard, unknown };
+        RecipeHandlerClass.applyComplexityRating(recipes);
+
+        System.assertEquals('Simple', easy.Complexity__c);
+        System.assertEquals('Moderate', medium.Complexity__c);
+        System.assertEquals('Difficult', hard.Complexity__c);
+        System.assertEquals(null, unknown.Complexity__c);
+    }
+
+    @IsTest
+    static void testCreateRecipeReviewTask_Positive() {
+        // Create a user for Cookbook ownership
+        User u = [SELECT Id FROM User WHERE Profile.Name = 'Standard User' LIMIT 1];
+
+        // Create cookbook
+        Cookbook__c cb = new Cookbook__c(Name = 'Cookbook for Review', OwnerId = u.Id);
+        insert cb;
+
+        // Create non-draft recipe
+        Recipe__c r = new Recipe__c(
+            Name = 'Published Recipe',
+            Active_Time__c = 10,
+            Active_Time_Units__c = 'Minutes',
+            Description__c = 'Ready for review',
+            Servings__c = 2,
+            Draft__c = false
+        );
+        insert r;
+
+        // Create recipe usage
+        Recipe_Usage__c ru = new Recipe_Usage__c(Recipe__c = r.Id, Cookbook__c = cb.Id);
+        insert ru;
+
+        Test.startTest();
+            RecipeHandlerClass.createRecipeReviewTask(new List<Recipe__c>{ r });
+        Test.stopTest();
+
+        List<Task> tasks = [SELECT Id, WhatId, Subject, OwnerId FROM Task WHERE WhatId = :cb.Id];
+        System.assertEquals(1, tasks.size(), 'Should create one review task');
+        System.assertEquals('Review Recipe', tasks[0].Subject);
+        System.assertEquals(u.Id, tasks[0].OwnerId);
+    }
+
+    @IsTest
+    static void testCreateRecipeReviewTask_SkipsDraftRecipe() {
+        // Create draft recipe
+        Recipe__c draft = new Recipe__c(
+            Name = 'Draft Recipe',
+            Draft__c = true
+        );
+        insert draft;
+
+        Test.startTest();
+            RecipeHandlerClass.createRecipeReviewTask(new List<Recipe__c>{ draft });
+        Test.stopTest();
+
+        List<Task> tasks = [SELECT Id FROM Task WHERE Subject = 'Review Recipe'];
+        System.assertEquals(0, tasks.size(), 'No tasks should be created for draft recipe');
+    }
+
+    @IsTest
+    static void testCreateRecipeReviewTask_NoUsages() {
+        // Non-draft recipe with no usage
+        Recipe__c r = new Recipe__c(
+            Name = 'Unused Published Recipe',
+            Draft__c = false,
+            Active_Time__c = 5,
+            Active_Time_Units__c = 'Minutes',
+            Description__c = 'Just published',
+            Servings__c = 1
+        );
+        insert r;
+
+        Test.startTest();
+            RecipeHandlerClass.createRecipeReviewTask(new List<Recipe__c>{ r });
+        Test.stopTest();
+
+        List<Task> tasks = [SELECT Id FROM Task WHERE Subject = 'Review Recipe'];
+        System.assertEquals(0, tasks.size(), 'No tasks should be created without usage');
+    }
+}
